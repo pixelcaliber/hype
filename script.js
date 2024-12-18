@@ -8,7 +8,7 @@ const servers = {
     ]
 };
 
-const socket = io("http://localhost:3000"); // Connect to the signaling server
+const socket = io("https://signal-bs3p.onrender.com"); // Connect to the signaling server
 
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
