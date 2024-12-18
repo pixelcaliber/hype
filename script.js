@@ -4,11 +4,14 @@ let peerConnection;
 
 const servers = {
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" } // Free STUN server
+        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" }
     ]
 };
 
-const socket = io("https://signal-bs3p.onrender.com"); // Connect to the signaling server
+const socket = io("https://signal-bs3p.onrender.com");
+// const socket = io("http://localhost:3000");
 
 const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
@@ -19,37 +22,74 @@ const hangupCallButton = document.getElementById("hangupCall");
 async function startLocalStream() {
     try {
         console.log("Getting local media stream...");
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localStream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+            audio: true
+        });
         localVideo.srcObject = localStream;
         console.log("Local stream started.");
     } catch (error) {
         console.error("Error accessing media devices.", error);
+        alert("Could not access camera/microphone: " + error.message);
     }
 }
 
-// Create a new peer connection
+// Create a new peer connection with enhanced configuration
 function createPeerConnection() {
-    peerConnection = new RTCPeerConnection(servers);
+    console.log("Creating peer connection...");
+    peerConnection = new RTCPeerConnection({
+        iceServers: servers.iceServers,
+        iceTransportPolicy: 'all',
+        bundlePolicy: 'max-bundle'
+    });
+
+    // Reset remote stream
+    remoteStream = new MediaStream();
+    remoteVideo.srcObject = remoteStream;
 
     // Add local tracks to the peer connection
     localStream.getTracks().forEach(track => {
+        console.log("Adding local track:", track.kind);
         peerConnection.addTrack(track, localStream);
     });
 
     // Handle remote tracks
     peerConnection.ontrack = event => {
-        if (!remoteStream) {
-            remoteStream = new MediaStream();
-            remoteVideo.srcObject = remoteStream;
-        }
-        remoteStream.addTrack(event.track);
+        console.log("Remote track received:", event.track.kind);
+        event.track.onmute = () => console.log(`${event.track.kind} track muted`);
+        event.track.onunmute = () => console.log(`${event.track.kind} track unmuted`);
+
+        event.streams[0].getTracks().forEach(track => {
+            remoteStream.addTrack(track);
+        });
     };
 
-    // Handle ICE candidates
+    // Enhanced ICE candidate handling
     peerConnection.onicecandidate = event => {
         if (event.candidate) {
             console.log("Sending ICE candidate:", event.candidate);
-            sendMessage("candidate", event.candidate);
+            socket.emit("message", {
+                type: "candidate",
+                payload: {
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex
+                }
+            });
+        }
+    };
+
+    // Connection state monitoring
+    peerConnection.onconnectionstatechange = () => {
+        console.log("Connection state:", peerConnection.connectionState);
+        switch (peerConnection.connectionState) {
+            case "connected":
+                console.log("Peer connection established!");
+                break;
+            case "failed":
+                console.error("Connection failed. Attempting to reconnect...");
+                hangupCall();
+                break;
         }
     };
 
@@ -58,34 +98,45 @@ function createPeerConnection() {
 
 // Handle SDP offer/answer messages
 async function handleSDPMessage(type, sdp) {
-    if (type === "offer") {
-        console.log("Received SDP offer.");
-        createPeerConnection();
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        sendMessage("answer", peerConnection.localDescription);
-        console.log("Sent SDP answer.");
-    } else if (type === "answer") {
-        console.log("Received SDP answer.");
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+    try {
+        if (type === "offer") {
+            console.log("Received SDP offer.");
+            if (!peerConnection) createPeerConnection();
+
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            socket.emit("message", { type: "answer", payload: peerConnection.localDescription });
+            console.log("Sent SDP answer.");
+        } else if (type === "answer") {
+            console.log("Received SDP answer.");
+            await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+        }
+    } catch (error) {
+        console.error("SDP handling error:", error);
     }
 }
 
 // Handle ICE candidate messages
-async function handleICECandidateMessage(candidate) {
+async function handleICECandidateMessage(candidateData) {
     try {
-        console.log("Adding received ICE candidate:", candidate);
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch (error) {
-        console.error("Error adding received ICE candidate", error);
-    }
-}
+        if (!peerConnection) {
+            console.warn("Peer connection not established. Skipping ICE candidate.");
+            return;
+        }
 
-// Send messages to the signaling server
-function sendMessage(type, payload) {
-    console.log(`Sending message: ${type}`, payload);
-    socket.emit("message", { type, payload });
+        const candidate = new RTCIceCandidate({
+            candidate: candidateData.candidate,
+            sdpMid: candidateData.sdpMid,
+            sdpMLineIndex: candidateData.sdpMLineIndex
+        });
+
+        console.log("Adding received ICE candidate:", candidate);
+        await peerConnection.addIceCandidate(candidate);
+    } catch (error) {
+        console.error("Error adding ICE candidate", error);
+    }
 }
 
 // Listen for messages from the signaling server
@@ -105,22 +156,46 @@ startCallButton.addEventListener("click", async () => {
     console.log("Starting call...");
     createPeerConnection();
 
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
+    try {
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
 
-    sendMessage("offer", peerConnection.localDescription);
-    console.log("Sent SDP offer.");
+        socket.emit("message", { type: "offer", payload: peerConnection.localDescription });
+        console.log("Sent SDP offer.");
+    } catch (error) {
+        console.error("Call start error:", error);
+        alert("Failed to start call: " + error.message);
+    }
 });
 
 // Hang up the call
-hangupCallButton.addEventListener("click", () => {
+function hangupCall() {
     console.log("Ending call...");
-    peerConnection.close();
-    peerConnection = null;
-    remoteStream = null;
+
+    // Stop all tracks
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+    }
+
+    if (remoteStream) {
+        remoteStream.getTracks().forEach(track => track.stop());
+    }
+
+    // Close peer connection
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+
+    // Clear video sources
+    localVideo.srcObject = null;
     remoteVideo.srcObject = null;
+
     console.log("Call ended.");
-});
+}
+
+// Hang up button event listener
+hangupCallButton.addEventListener("click", hangupCall);
 
 // Start the local video stream on page load
 startLocalStream();
