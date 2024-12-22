@@ -1,4 +1,4 @@
-const API_KEY = TURN_API_KEY;
+const API_KEY = process.env.TURN_API_KEY;
 
 // Initialize ICE server configuration
 const servers = {
@@ -16,7 +16,7 @@ let peerConnection;
 
 async function getTurnServerCreds() {
     try {
-        const response = await fetch(`https://${USERNAME}.metered.live/api/v1/turn/credentials?apiKey=${API_KEY}`);
+        const response = await fetch(`https://${process.env.USERNAME}.metered.live/api/v1/turn/credentials?apiKey=${API_KEY}`);
 
         if (!response.ok) {
             throw new Error(`Failed to fetch TURN credentials: ${response.statusText}`);
