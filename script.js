@@ -1,15 +1,37 @@
-let localStream;
-let remoteStream;
-let peerConnection;
+const API_KEY = TURN_API_KEY;
 
+// Initialize ICE server configuration
 const servers = {
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
+        { urls: "stun:stun.l.google.com:19302" }, // Default STUN servers
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" }
     ]
 };
 
+let localStream;
+let remoteStream;
+let peerConnection;
+
+
+async function getTurnServerCreds() {
+    try {
+        const response = await fetch(`https://${USERNAME}.metered.live/api/v1/turn/credentials?apiKey=${API_KEY}`);
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch TURN credentials: ${response.statusText}`);
+        }
+
+        const iceServers = await response.json(); // API response should be valid JSON
+        console.log("Received TURN server credentials:", iceServers);
+
+        // Update global servers.iceServers
+        servers.iceServers = [...servers.iceServers, ...iceServers];
+        console.log("Updated ICE servers configuration:", servers.iceServers);
+    } catch (error) {
+        console.error("Error fetching TURN server credentials:", error);
+    }
+}
 const socket = io("https://signal-bs3p.onrender.com");
 // const socket = io("http://localhost:3000");
 
@@ -34,7 +56,12 @@ async function startLocalStream() {
     }
 }
 
-// Create a new peer connection with enhanced configuration
+(async () => {
+    await getTurnServerCreds();
+    console.log("TURN servers have been initialized.");
+})();
+
+// Updated `createPeerConnection` to use the dynamic ICE servers
 function createPeerConnection() {
     console.log("Creating peer connection...");
     peerConnection = new RTCPeerConnection({
@@ -56,15 +83,12 @@ function createPeerConnection() {
     // Handle remote tracks
     peerConnection.ontrack = event => {
         console.log("Remote track received:", event.track.kind);
-        event.track.onmute = () => console.log(`${event.track.kind} track muted`);
-        event.track.onunmute = () => console.log(`${event.track.kind} track unmuted`);
-
         event.streams[0].getTracks().forEach(track => {
             remoteStream.addTrack(track);
         });
     };
 
-    // Enhanced ICE candidate handling
+    // Handle ICE candidates
     peerConnection.onicecandidate = event => {
         if (event.candidate) {
             console.log("Sending ICE candidate:", event.candidate);
@@ -76,20 +100,6 @@ function createPeerConnection() {
                     sdpMLineIndex: event.candidate.sdpMLineIndex
                 }
             });
-        }
-    };
-
-    // Connection state monitoring
-    peerConnection.onconnectionstatechange = () => {
-        console.log("Connection state:", peerConnection.connectionState);
-        switch (peerConnection.connectionState) {
-            case "connected":
-                console.log("Peer connection established!");
-                break;
-            case "failed":
-                console.error("Connection failed. Attempting to reconnect...");
-                hangupCall();
-                break;
         }
     };
 
