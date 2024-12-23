@@ -15,7 +15,7 @@ let peerConnection;
 
 async function getTurnServerCreds() {
     try {
-        const response = await fetch(`https://pixelcaliber.metered.live/api/v1/turn/credentials?apiKey=021829d71649dc0f540e1941c030a61155e9`);
+        const response = await fetch(`https://${USERNAME}.metered.live/api/v1/turn/credentials?apiKey=${TURN_API_KEY}`);
 
         if (!response.ok) {
             throw new Error(`Failed to fetch TURN credentials: ${response.statusText}`);
