@@ -1,0 +1,17 @@
+.container {
+    max-width: 800px;
+    margin: auto;
+    text-align: center;
+}
+#videosContainer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 20px;
+}
+video {
+    width: 200px;
+    height: 150px;
+    margin: 5px;
+    background: black;
+}
