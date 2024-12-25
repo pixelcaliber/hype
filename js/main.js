@@ -134,15 +134,13 @@ async function createPeerConnection(peerId, isInitiator) {
 
         if (isInitiator) {
             try {
-                const offer = await peerConnection.createOffer(offerOptions)
-                    .then(offer => {
-                        // Modify SDP to prefer H.264/VP8 for video
-                        offer.sdp = offer.sdp.replace(
-                            /(m=video.*\r\n)/g,
-                            '$1a=fmtp:96 profile-level-id=42e01f;level-asymmetry-allowed=1\r\n'
-                        );
-                        return peerConnection.setLocalDescription(offer);
-                    });;
+                const offer = await peerConnection.createOffer();
+                offer.sdp = offer.sdp.replace(/useinbandfec=1/g, 'useinbandfec=1; maxaveragebitrate=128000');
+                const newOffer = new RTCSessionDescription({
+                    type: offer.type,
+                    sdp: offer.sdp,
+                });
+
                 await peerConnection.setLocalDescription(offer);
                 socket.emit('room_message', {
                     roomId: currentRoomId,
