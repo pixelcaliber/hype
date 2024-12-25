@@ -13,7 +13,7 @@ export async function sendLogToServer(level, message, details = {}) {
         console.warn(message)
     }
 
-    fetch('http://localhost:3000/api/logs', {
+    fetch('https://signal-bs3p.onrender.com/api/logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(logPayload),
