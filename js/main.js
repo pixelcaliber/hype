@@ -1,5 +1,5 @@
 import { sendLogToServer } from "../js/utils.js";
-const socket = io('http://localhost:3000');
+const socket = io('https://signal-bs3p.onrender.com');
 
 
 
@@ -33,7 +33,7 @@ const videoButton = document.getElementById('toggleVideo');
 async function initializeTurnServers() {
     try {
         sendLogToServer('INFO', `Fetching the turn server creds room: ${currentRoomId}`);
-        const response = await fetch('http://localhost:3000/api/turn/credentials');
+        const response = await fetch('https://signal-bs3p.onrender.com/api/turn/credentials');
         if (response.ok) {
             const turnServers = await response.json();
             rtcConfig.iceServers = [...rtcConfig.iceServers, ...turnServers];
