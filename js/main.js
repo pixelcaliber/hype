@@ -141,7 +141,7 @@ async function createPeerConnection(peerId, isInitiator) {
                             /(m=video.*\r\n)/g,
                             '$1a=fmtp:96 profile-level-id=42e01f;level-asymmetry-allowed=1\r\n'
                         );
-                        return pc.setLocalDescription(offer);
+                        return peerConnection.setLocalDescription(offer);
                     });;
                 await peerConnection.setLocalDescription(offer);
                 socket.emit('room_message', {
