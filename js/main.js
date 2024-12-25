@@ -20,6 +20,11 @@ const rtcConfig = {
     ]
 };
 
+const offerOptions = {
+    offerToReceiveAudio: true,
+    offerToReceiveVideo: true
+};
+
 const roomIdInput = document.getElementById('roomId');
 const roomIdDisplay = document.getElementById('roomIdDisplay');
 const createRoomButton = document.getElementById('createRoomButton');
@@ -45,11 +50,29 @@ async function initializeTurnServers() {
     }
 }
 
+async function checkMediaTracks(stream) {
+    const videoTrack = stream.getVideoTracks()[0];
+    const audioTrack = stream.getAudioTracks()[0];
+
+    if (!videoTrack?.enabled || !audioTrack?.enabled) {
+        console.warn('Media tracks not enabled:', {
+            video: videoTrack?.enabled,
+            audio: audioTrack?.enabled
+        });
+    }
+
+    return videoTrack && audioTrack;
+}
+
 async function initializeLocalStream() {
     if (!localStream) {
         try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
             localVideo.srcObject = localStream;
+            if (!await checkMediaTracks(localStream)) {
+                throw new Error('Media tracks unavailable');
+            }
+
             isInitialized = true;
             audioButton.disabled = false;
             videoButton.disabled = false;
@@ -111,7 +134,15 @@ async function createPeerConnection(peerId, isInitiator) {
 
         if (isInitiator) {
             try {
-                const offer = await peerConnection.createOffer();
+                const offer = await peerConnection.createOffer(offerOptions)
+                    .then(offer => {
+                        // Modify SDP to prefer H.264/VP8 for video
+                        offer.sdp = offer.sdp.replace(
+                            /(m=video.*\r\n)/g,
+                            '$1a=fmtp:96 profile-level-id=42e01f;level-asymmetry-allowed=1\r\n'
+                        );
+                        return pc.setLocalDescription(offer);
+                    });;
                 await peerConnection.setLocalDescription(offer);
                 socket.emit('room_message', {
                     roomId: currentRoomId,
